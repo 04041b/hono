@@ -56,4 +56,37 @@ describe('upgradeWebSocket middleware', () => {
     )
     expect(next).toBeCalled()
   })
+
+  it('Should call waitUntil with the promise returned by async onMessage handler', async () => {
+    const waitUntil = vi.fn()
+    const executionCtx = { waitUntil, passThroughOnException: vi.fn() }
+
+    let resolveMessage!: () => void
+    const handlerPromise = new Promise<void>((resolve) => {
+      resolveMessage = resolve
+    })
+
+    const app2 = new Hono()
+    app2.get(
+      '/ws',
+      upgradeWebSocket(() => ({
+        async onMessage(_evt, _ws) {
+          await handlerPromise
+        },
+      }))
+    )
+
+    await app2.request(
+      '/ws',
+      { headers: { Upgrade: 'websocket' } },
+      {},
+      executionCtx as unknown as ExecutionContext
+    )
+
+    server.dispatchEvent(new MessageEvent('message', { data: 'test' }))
+
+    expect(waitUntil).toHaveBeenCalledWith(expect.any(Promise))
+
+    resolveMessage()
+  })
 })
