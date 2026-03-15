@@ -33,15 +33,25 @@ export const upgradeWebSocket: UpgradeWebSocket<
 
   // note: cloudflare workers doesn't support 'open' event
 
-  if (events.onClose) {
-    server.addEventListener('close', (evt: CloseEvent) => events.onClose?.(evt, wsContext))
-  }
+  server.addEventListener('close', (evt: CloseEvent) => {
+    events.onClose?.(evt, wsContext)
+    try {
+      server.close()
+    } catch (e) {
+      // already closed
+    }
+  })
   if (events.onMessage) {
     server.addEventListener('message', (evt: MessageEvent) => events.onMessage?.(evt, wsContext))
   }
-  if (events.onError) {
-    server.addEventListener('error', (evt: Event) => events.onError?.(evt, wsContext))
-  }
+  server.addEventListener('error', (evt: Event) => {
+    events.onError?.(evt, wsContext)
+    try {
+      server.close()
+    } catch (e) {
+      // already closed
+    }
+  })
 
   // @ts-expect-error - server.accept is not typed
   server.accept?.()
