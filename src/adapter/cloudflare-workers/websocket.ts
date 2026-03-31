@@ -31,16 +31,41 @@ export const upgradeWebSocket: UpgradeWebSocket<
     send: (source) => server.send(source),
   })
 
+  let waitUntil: ((p: Promise<unknown>) => void) | undefined
+  try {
+    const ctx = c.executionCtx
+    if (typeof ctx?.waitUntil === 'function') {
+      waitUntil = (p: Promise<unknown>) => ctx.waitUntil(p)
+    }
+  } catch {
+    // executionCtx may not be available
+  }
+
+  const wrapHandler = <E extends Event>(fn: ((evt: E, ws: typeof wsContext) => void) | undefined) => {
+    if (!fn) {
+      return undefined
+    }
+    return (evt: E) => {
+      const result = fn(evt, wsContext)
+      if (waitUntil && result instanceof Promise) {
+        waitUntil(result)
+      }
+    }
+  }
+
   // note: cloudflare workers doesn't support 'open' event
 
-  if (events.onClose) {
-    server.addEventListener('close', (evt: CloseEvent) => events.onClose?.(evt, wsContext))
+  const onClose = wrapHandler(events.onClose)
+  if (onClose) {
+    server.addEventListener('close', onClose as EventListener)
   }
-  if (events.onMessage) {
-    server.addEventListener('message', (evt: MessageEvent) => events.onMessage?.(evt, wsContext))
+  const onMessage = wrapHandler(events.onMessage)
+  if (onMessage) {
+    server.addEventListener('message', onMessage as EventListener)
   }
-  if (events.onError) {
-    server.addEventListener('error', (evt: Event) => events.onError?.(evt, wsContext))
+  const onError = wrapHandler(events.onError)
+  if (onError) {
+    server.addEventListener('error', onError as EventListener)
   }
 
   // @ts-expect-error - server.accept is not typed

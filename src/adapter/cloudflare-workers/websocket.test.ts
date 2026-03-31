@@ -56,4 +56,48 @@ describe('upgradeWebSocket middleware', () => {
     )
     expect(next).toBeCalled()
   })
+
+  it('Should use waitUntil for async onMessage handlers', async () => {
+    const wsServer = new EventTarget()
+
+    // @ts-expect-error Cloudflare API
+    globalThis.WebSocketPair = class {
+      0: WebSocket
+      1: WebSocket
+      constructor() {
+        this[0] = {} as WebSocket
+        this[1] = wsServer as WebSocket
+      }
+    }
+
+    const waitUntilFn = vi.fn()
+    const asyncApp = new Hono()
+
+    const messageHandled = new Promise<void>((resolve) =>
+      asyncApp.get(
+        '/ws-async',
+        upgradeWebSocket(() => ({
+          async onMessage() {
+            await new Promise((r) => setTimeout(r, 10))
+            resolve()
+          },
+        }))
+      )
+    )
+
+    await asyncApp.request('/ws-async', {
+      headers: {
+        Upgrade: 'websocket',
+      },
+    }, undefined, {
+      waitUntil: waitUntilFn,
+      passThroughOnException: () => {},
+    } as ExecutionContext)
+
+    wsServer.dispatchEvent(new MessageEvent('message', { data: 'hello' }))
+    await messageHandled
+
+    expect(waitUntilFn).toHaveBeenCalledTimes(1)
+    expect(waitUntilFn).toHaveBeenCalledWith(expect.any(Promise))
+  })
 })
