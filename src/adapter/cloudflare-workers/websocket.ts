@@ -33,14 +33,33 @@ export const upgradeWebSocket: UpgradeWebSocket<
 
   // note: cloudflare workers doesn't support 'open' event
 
+  let executionCtx: { waitUntil(promise: Promise<unknown>): void } | undefined
+  try {
+    executionCtx = c.executionCtx
+  } catch {
+    // executionCtx is not available in all environments (e.g. testing without ExecutionContext)
+  }
+
+  const waitUntilIfNeeded = (result: unknown) => {
+    if (result instanceof Promise && executionCtx) {
+      executionCtx.waitUntil(result)
+    }
+  }
+
   if (events.onClose) {
-    server.addEventListener('close', (evt: CloseEvent) => events.onClose?.(evt, wsContext))
+    server.addEventListener('close', (evt: CloseEvent) =>
+      waitUntilIfNeeded(events.onClose?.(evt, wsContext))
+    )
   }
   if (events.onMessage) {
-    server.addEventListener('message', (evt: MessageEvent) => events.onMessage?.(evt, wsContext))
+    server.addEventListener('message', (evt: MessageEvent) =>
+      waitUntilIfNeeded(events.onMessage?.(evt, wsContext))
+    )
   }
   if (events.onError) {
-    server.addEventListener('error', (evt: Event) => events.onError?.(evt, wsContext))
+    server.addEventListener('error', (evt: Event) =>
+      waitUntilIfNeeded(events.onError?.(evt, wsContext))
+    )
   }
 
   // @ts-expect-error - server.accept is not typed
